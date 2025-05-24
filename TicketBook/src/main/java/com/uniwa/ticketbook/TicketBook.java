@@ -2,6 +2,7 @@ package com.uniwa.ticketbook;
 import io.github.cdimascio.dotenv.Dotenv;
 import javax.swing.*;
 import java.awt.*;
+import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.*;
@@ -52,6 +53,69 @@ public class TicketBook {
 
         return panel;
     }
+
+   public class MovieItem {
+    private String title;
+    private ImageIcon icon;
+    private String duration;
+    private String stars;
+
+    public MovieItem(String title, ImageIcon icon, String duration, String stars) {
+        this.title = title;
+        this.icon = icon;
+        this.duration = duration;
+        this.stars = stars;
+    }
+
+    // getters
+    public String getTitle() { return title; }
+    public ImageIcon getIcon() { return icon; }
+    public String getDuration() { return duration; }
+    public String getStars() { return stars; }
+}
+
+class MovieCellRenderer extends JPanel implements ListCellRenderer<MovieItem> {
+    private final JLabel imageLabel = new JLabel();
+    private final JLabel titleLabel = new JLabel();
+    private final JLabel detailsLabel = new JLabel();
+
+    public MovieCellRenderer() {
+        setLayout(new BorderLayout(10, 10));
+        setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        // Panel for title and details stacked vertically
+        JPanel textPanel = new JPanel(new GridLayout(0, 1));
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, 14f));
+        textPanel.add(titleLabel);
+        textPanel.add(detailsLabel);
+
+        add(imageLabel, BorderLayout.WEST);
+        add(textPanel, BorderLayout.CENTER);
+    }
+
+    @Override
+    public Component getListCellRendererComponent(JList<? extends MovieItem> list,
+                                                  MovieItem item, int index,
+                                                  boolean isSelected, boolean cellHasFocus) {
+        imageLabel.setIcon(item.getIcon());
+        titleLabel.setText(item.getTitle());
+        detailsLabel.setText("Duration: " + item.getDuration() + " min | Stars: " + item.getStars());
+
+        if (isSelected) {
+            setBackground(list.getSelectionBackground());
+            titleLabel.setForeground(list.getSelectionForeground());
+            detailsLabel.setForeground(list.getSelectionForeground());
+        } else {
+            setBackground(list.getBackground());
+            titleLabel.setForeground(list.getForeground());
+            detailsLabel.setForeground(list.getForeground());
+        }
+
+        setOpaque(true);
+        return this;
+    }
+}
+
 
     private JPanel buildRegisterPage() {
         JPanel panel = new JPanel(new GridLayout(7, 1, 10, 10));
@@ -210,78 +274,96 @@ public class TicketBook {
         return panel;
     }
 
-    private JPanel buildMoviesPage(String username) {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+   private JPanel buildMoviesPage(String username) {
+    JPanel panel = new JPanel(new BorderLayout(10, 10));
+    panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-        JLabel welcomeLabel = new JLabel("Welcome, " + username + "! Here are the movies:", SwingConstants.CENTER);
-        welcomeLabel.setFont(new Font("Arial", Font.BOLD, 18));
+    JLabel welcomeLabel = new JLabel("Welcome, " + username + "! Here are the movies:", SwingConstants.CENTER);
+    welcomeLabel.setFont(new Font("Arial", Font.BOLD, 18));
 
-        // Search input box (single line)
-        JTextField searchField = new JTextField();
-        searchField.setToolTipText("Type to search movies by title");
+    JTextField searchField = new JTextField();
+    searchField.setToolTipText("Type to search movies by title");
 
-        DefaultListModel<String> movieListModel = new DefaultListModel<>();
-        JList<String> movieList = new JList<>(movieListModel);
-        JScrollPane scrollPane = new JScrollPane(movieList);
+    DefaultListModel<MovieItem> movieListModel = new DefaultListModel<>();
+    JList<MovieItem> movieList = new JList<>(movieListModel);
+    movieList.setCellRenderer(new MovieCellRenderer());
+    movieList.setFixedCellHeight(300); // enough room for image and title
+    movieList.setFixedCellWidth(300);
+    movieList.setLayoutOrientation(JList.HORIZONTAL_WRAP);
+    movieList.setVisibleRowCount(0); // enables wrapping
 
-        JButton logoutBtn = new JButton("Logout");
+    JScrollPane scrollPane = new JScrollPane(movieList);
 
-        // Layout:
-        // Top: Welcome label
-        // Below top: search field
-        // Center: movie list with scroll
-        // Bottom: logout button
+    JButton logoutBtn = new JButton("Logout");
 
-        JPanel topPanel = new JPanel(new BorderLayout());
-        topPanel.add(welcomeLabel, BorderLayout.NORTH);
-        topPanel.add(searchField, BorderLayout.SOUTH);
+    JPanel topPanel = new JPanel(new BorderLayout());
+    topPanel.add(welcomeLabel, BorderLayout.NORTH);
+    topPanel.add(searchField, BorderLayout.SOUTH);
 
-        panel.add(topPanel, BorderLayout.NORTH);
-        panel.add(scrollPane, BorderLayout.CENTER);
-        panel.add(logoutBtn, BorderLayout.SOUTH);
+    panel.add(topPanel, BorderLayout.NORTH);
+    panel.add(scrollPane, BorderLayout.CENTER);
+    panel.add(logoutBtn, BorderLayout.SOUTH);
 
-        loadMovies(movieListModel, ""); // load all movies at start
+    loadMovies(movieListModel, ""); // load all movies
 
-        // Add listener to update movie list as user types
-        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateList(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateList(); }
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateList(); }
-            private void updateList() {
-                String filterText = searchField.getText().trim();
-                loadMovies(movieListModel, filterText);
-            }
-        });
+    // Live search
+    searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+        public void changedUpdate(javax.swing.event.DocumentEvent e) { updateList(); }
+        public void removeUpdate(javax.swing.event.DocumentEvent e) { updateList(); }
+        public void insertUpdate(javax.swing.event.DocumentEvent e) { updateList(); }
 
-        logoutBtn.addActionListener(e -> cardLayout.show(mainPanel, "home"));
+        private void updateList() {
+            String filterText = searchField.getText().trim();
+            loadMovies(movieListModel, filterText);
+        }
+    });
 
-        return panel;
-    }
+    logoutBtn.addActionListener(e -> cardLayout.show(mainPanel, "home"));
 
-    private void loadMovies(DefaultListModel<String> model, String filter) {
-        model.clear();
-        Dotenv dotenv = Dotenv.load();
-        String url = dotenv.get("DB_URL");
-        String user = dotenv.get("USERNAME");
-        String dbPassword = dotenv.get("PASSWORD");
+    return panel;
+}
 
-        String sql = "SELECT title FROM movies WHERE title LIKE ? ORDER BY title";
+    private void loadMovies(DefaultListModel<MovieItem> model, String filter) {
+    model.clear();
+    Dotenv dotenv = Dotenv.load();
+    String url = dotenv.get("DB_URL");
+    String user = dotenv.get("USERNAME");
+    String dbPassword = dotenv.get("PASSWORD");
 
-        try (Connection conn = DriverManager.getConnection(url, user, dbPassword);
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+    String sql = "SELECT title, picture_url,duration,stars FROM movies WHERE title LIKE ? ORDER BY title";
 
-            stmt.setString(1, "%" + filter + "%");
-            ResultSet rs = stmt.executeQuery();
+    try (Connection conn = DriverManager.getConnection(url, user, dbPassword);
+         PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+        stmt.setString(1, "%" + filter + "%");
+        ResultSet rs = stmt.executeQuery();
 
             while (rs.next()) {
-                model.addElement(rs.getString("title"));
+            String title = rs.getString("title");
+            String imageUrlStr = rs.getString("picture_url");
+            String duration = rs.getString("duration");
+            String stars = rs.getString("stars");
+
+            ImageIcon icon;
+            try {
+                URL imageUrl = new URL(imageUrlStr);
+                ImageIcon rawIcon = new ImageIcon(imageUrl);
+                Image scaledImage = rawIcon.getImage().getScaledInstance(80, 80, Image.SCALE_SMOOTH);
+                icon = new ImageIcon(scaledImage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                icon = new ImageIcon();
             }
 
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
+    model.addElement(new MovieItem(title, icon, duration, stars));
+}
+
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Error loading movies: " + e.getMessage());
     }
+}
 
     private String hashPassword(String password) {
         try {
