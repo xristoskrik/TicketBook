@@ -162,40 +162,54 @@ public class TicketBook {
 
     // Login action - extracted to reusable method
     Runnable loginAction = () -> {
-        String ue = ueField.getText().trim();
-        String pw = new String(pwField.getPassword()).trim();
-        if (ue.isEmpty() || pw.isEmpty()) {
-            msg.setText("Συμπλήρωσε τα στοιχεία σου");
-            return;
-        }
-        String hashed = hashPassword(pw);
-        if (hashed == null) {
-            msg.setText("Hash error");
-            return;
-        }
-        String sql = "SELECT id,username FROM users WHERE (username=? OR email=?) AND password=?";
-        try (Connection c = createConnection();
-             PreparedStatement st = c.prepareStatement(sql)) {
-            st.setString(1,ue);
-            st.setString(2,ue);
-            st.setString(3,hashed);
-            ResultSet rs = st.executeQuery();
-            if (rs.next()) {
-                currentUserId   = rs.getInt("id");
-                currentUsername = rs.getString("username");
-                // Μετά login panels
+    String ue = ueField.getText().trim();
+    String pw = new String(pwField.getPassword()).trim();
+    if (ue.isEmpty() || pw.isEmpty()) {
+        msg.setText("Συμπλήρωσε τα στοιχεία σου");
+        return;
+    }
+    String hashed = hashPassword(pw);
+    if (hashed == null) {
+        msg.setText("Hash error");
+        return;
+    }
+    // Modified SQL to also select the role
+    String sql = "SELECT id,username,role FROM users WHERE (username=? OR email=?) AND password=?";
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        st.setString(1,ue);
+        st.setString(2,ue);
+        st.setString(3,hashed);
+        ResultSet rs = st.executeQuery();
+        if (rs.next()) {
+            String userRole = rs.getString("role");
+            currentUserId   = rs.getInt("id");
+            currentUsername = rs.getString("username");
+            
+            // Check role and redirect accordingly
+            if ("user".equals(userRole)) {
+                // Regular user login - show movie booking interface
                 mainPanel.add(buildPostLoginHome(),   "postLoginHome");
                 mainPanel.add(buildMoviesPage(),      "movies");
-              
                 cardLayout.show(mainPanel, "postLoginHome");
-            } else {
-                msg.setText("Invalid credentials");
+            } /*else if ("admin".equals(userRole)) {
+                 Admin login
+                
+            }*/ else {
+                // Invalid role
+                msg.setText("Δεν έχετε δικαίωμα πρόσβασης σε αυτή την εφαρμογή");
+                currentUserId = -1;
+                currentUsername = null;
+                return;
             }
-        } catch (SQLException ex) {
-            ex.printStackTrace();
-            msg.setText("Login error: "+ex.getMessage());
+        } else {
+            msg.setText("Invalid credentials");
         }
-    };
+    } catch (SQLException ex) {
+        ex.printStackTrace();
+        msg.setText("Login error: "+ex.getMessage());
+    }
+};
 
     // Button click listener
     btn.addActionListener(e -> loginAction.run());
