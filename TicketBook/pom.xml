@@ -26,7 +26,7 @@
     </build>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.release>22</maven.compiler.release>
+        <maven.compiler.release>24</maven.compiler.release>
         <exec.mainClass>com.uniwa.ticketbook.TicketBook</exec.mainClass>
     </properties>
 
@@ -42,6 +42,18 @@
     <artifactId>dotenv-java</artifactId>
     <version>3.0.0</version>
   </dependency>
+  
+  <dependency>
+  <groupId>com.google.zxing</groupId>
+  <artifactId>core</artifactId>
+  <version>3.5.1</version>
+</dependency>
+
+<dependency>
+  <groupId>com.google.zxing</groupId>
+  <artifactId>javase</artifactId>
+  <version>3.5.1</version>
+</dependency>
 </dependencies>
 
 </project>
