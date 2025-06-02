@@ -192,10 +192,13 @@ public class TicketBook {
                 mainPanel.add(buildPostLoginHome(),   "postLoginHome");
                 mainPanel.add(buildMoviesPage(),      "movies");
                 cardLayout.show(mainPanel, "postLoginHome");
-            } /*else if ("admin".equals(userRole)) {
-                 Admin login
+            }   else if ("admin".equals(userRole)) {
+                // Admin login - edit movies etc
+                mainPanel.add(buildAdminHome(),   "AdminHome");
+                mainPanel.add(buildAdminMoviesPage(),      "AdminMovies");
+                cardLayout.show(mainPanel, "AdminHome");
                 
-            }*/ else {
+            }   else {
                 // Invalid role
                 msg.setText("Δεν έχετε δικαίωμα πρόσβασης σε αυτή την εφαρμογή");
                 currentUserId = -1;
@@ -712,6 +715,247 @@ private JPanel buildMyBookingsPage() {
     return panel;
 }
 
+    // Post Login Admin Page
+    private JPanel buildAdminHome() {
+        JPanel panel = new JPanel(new BorderLayout());
+        JLabel title = new JLabel("Αρχική Διαχειριστή", SwingConstants.CENTER);
+        title.setFont(new Font("Arial", Font.BOLD, 24));
+        
+        // Κύριο πάνελ με τα κουμπιά λειτουργιών
+        JPanel buttons = new JPanel();
+        JButton btnAdminMovies = new JButton("Διαχείριση Ταινιών");
+        JButton btnAdminBkgs = new JButton("Κρατήσεις");
+        btnAdminMovies.addActionListener(e -> cardLayout.show(mainPanel, "AdminMovies"));
+        btnAdminBkgs.addActionListener(e -> {
+            JPanel fresh = buildAdminBookingsPage();
+            mainPanel.add(fresh, "AdminBookings");
+            cardLayout.show(mainPanel, "AdminBookings");
+        });
+        buttons.add(btnAdminMovies);
+        buttons.add(btnAdminBkgs);
+        
+        // Πάνελ με το κουμπί αποσύνδεσης
+        JPanel logoutPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton btnLogout = new JButton("Αποσύνδεση");
+        btnLogout.addActionListener(e -> {
+            currentUserId = -1;
+            currentUsername = null;
+            cardLayout.show(mainPanel, "home");
+        });
+        logoutPanel.add(btnLogout);
+        
+        // Διαμόρφωση του κύριου πάνελ
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(buttons, BorderLayout.CENTER);
+        panel.add(logoutPanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+
+    // Movies Admin Page
+  private JPanel buildAdminMoviesPage() {
+        JPanel panel = new JPanel(new BorderLayout(10,10));
+        panel.setBorder(BorderFactory.createEmptyBorder(20,20,20,20));
+        JLabel welcome = new JLabel("Καλώς ήρθες, "+currentUsername, SwingConstants.CENTER);
+        JTextField search = new JTextField();
+        DefaultListModel<MovieItem> model = new DefaultListModel<>();
+        JList<MovieItem> list = new JList<>(model);
+        list.setCellRenderer(new MovieCellRenderer());
+        list.setLayoutOrientation(JList.HORIZONTAL_WRAP);
+        list.setVisibleRowCount(0);
+
+        loadMovies(model, "");
+        search.getDocument().addDocumentListener(new DocumentListener(){
+            public void insertUpdate(DocumentEvent e){ update(); }
+            public void removeUpdate(DocumentEvent e){ update(); }
+            public void changedUpdate(DocumentEvent e){ update(); }
+            private void update(){
+                loadMovies(model, search.getText().trim());
+            }
+        });
+
+        JButton btnBack = new JButton("Πίσω");
+        JButton btnNext = new JButton("Επόμενο");
+        btnBack.addActionListener(e -> cardLayout.show(mainPanel, "AdminHome"));
+        btnNext.addActionListener(e -> {
+            MovieItem mi = list.getSelectedValue();
+            if (mi == null) {
+                JOptionPane.showMessageDialog(frame, "Επίλεξε ταινία");
+                return;
+            }
+            mainPanel.add(buildShowtimesPage(mi.getId()), "showtimes");
+            cardLayout.show(mainPanel, "showtimes");
+        });
+
+        JPanel top = new JPanel(new BorderLayout(5,5));
+        top.add(welcome, BorderLayout.NORTH);
+        top.add(search,  BorderLayout.SOUTH);
+
+        JPanel bot = new JPanel();
+        bot.add(btnBack);
+        bot.add(btnNext);
+
+        panel.add(top,    BorderLayout.NORTH);
+        panel.add(new JScrollPane(list), BorderLayout.CENTER);
+        panel.add(bot,    BorderLayout.SOUTH);
+        return panel;
+    }
+    
+    private JPanel buildAdminBookingsPage() {
+    JPanel panel = new JPanel(new BorderLayout(10,10));
+    panel.setBorder(BorderFactory.createEmptyBorder(20,20,20,20));
+    DefaultListModel<String> model = new DefaultListModel<>();
+    JList<String> list = new JList<>(model);
+    
+    // Store booking IDs separately to match with list items
+    List<Integer> bookingIds = new ArrayList<>();
+
+    String sql = "SELECT u.username, u.email, b.id, m.title, s.show_time, b.seat_number, b.qr_code " +
+                 "FROM bookings b " +
+                 "JOIN users u ON b.user_id = u.id " +
+                 "JOIN showtimes s ON b.showtime_id=s.id " +
+                 "JOIN movies m ON s.movie_id=m.id " +
+                 "ORDER BY s.show_time";
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        ResultSet rs = st.executeQuery();
+        while (rs.next()) {
+            int bookingId = rs.getInt("id");
+            bookingIds.add(bookingId); // Store the booking ID
+            
+            LocalDateTime dt = rs.getTimestamp("show_time").toLocalDateTime();
+            String day = capitalizeGreekDay(dt.getDayOfWeek());
+            String lbl = String.format(
+              "%s (%s) %s %d/%d %02d:%02d - %s (Θέση %s)",
+              rs.getString("username"),
+              rs.getString("email"),
+              day,
+              dt.getDayOfMonth(), dt.getMonthValue(),
+              dt.getHour(), dt.getMinute(),
+              rs.getString("title"),
+              rs.getString("seat_number")
+            );
+            if (rs.getString("qr_code") != null) {
+                lbl += " [QR]";
+            }
+            model.addElement(lbl);
+        }
+    } catch (SQLException ex) {
+        ex.printStackTrace();
+    }
+
+    JButton btnBack = new JButton("Πίσω");
+    btnBack.addActionListener(e -> cardLayout.show(mainPanel, "AdminHome"));
+
+    JButton qrButton = new JButton("Προβολή QR Code");
+    qrButton.addActionListener(e -> {
+    int selectedIndex = list.getSelectedIndex();
+    if (selectedIndex >= 0 && selectedIndex < bookingIds.size()) {
+        int bookingId = bookingIds.get(selectedIndex);
+
+        String qrSql = "SELECT qr_code FROM bookings WHERE id=?";
+        try (Connection c = createConnection();
+             PreparedStatement st = c.prepareStatement(qrSql)) {
+            st.setInt(1, bookingId);
+            ResultSet rs = st.executeQuery();
+            if (rs.next()) {
+                String qrCode = rs.getString("qr_code");
+                if (qrCode != null && !qrCode.isEmpty()) {
+                    showQRCodeDialog(qrCode);
+                } else {
+                    JOptionPane.showMessageDialog(frame, "Δεν βρέθηκε QR code για αυτή την κράτηση");
+                }
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "Σφάλμα φόρτωσης QR code: " + ex.getMessage());
+        }
+    } else {
+        JOptionPane.showMessageDialog(frame, "Παρακαλώ επιλέξτε μία κράτηση.");
+    }
+});
+
+    
+    panel.add(new JScrollPane(list), BorderLayout.CENTER);
+    JButton deleteButton = new JButton("Διαγραφή Κράτησης");
+    deleteButton.addActionListener(e -> {
+    int selectedIndex = list.getSelectedIndex();
+    if (selectedIndex >= 0 && selectedIndex < bookingIds.size()) {
+        int bookingId = bookingIds.get(selectedIndex);
+
+        int confirm = JOptionPane.showConfirmDialog(
+            frame,
+            "Είστε σίγουρος ότι θέλετε να διαγράψετε αυτή την κράτηση;",
+            "Επιβεβαίωση Διαγραφής",
+            JOptionPane.YES_NO_OPTION
+        );
+
+if (confirm == JOptionPane.YES_OPTION) {
+    try (Connection c = createConnection()) {
+
+        // Βρες showtime_id και seat_number ΠΡΙΝ τη διαγραφή
+        int showtimeId = 0;
+        String seatLabel = "";
+
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT showtime_id, seat_number FROM bookings WHERE id=?")) {
+            ps.setInt(1, bookingId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                showtimeId = rs.getInt("showtime_id");
+                seatLabel = rs.getString("seat_number");
+            }
+        }
+
+        // Διαγραφή κράτησης
+        String deleteSql = "DELETE FROM bookings WHERE id = ?";
+        try (PreparedStatement st = c.prepareStatement(deleteSql)) {
+            st.setInt(1, bookingId);
+            int affected = st.executeUpdate();
+            if (affected > 0) {
+                // Κάνε τη θέση ξανά διαθέσιμη
+                try (PreparedStatement ps2 = c.prepareStatement(
+                        "UPDATE seats SET is_available=1 WHERE showtime_id=? AND seat_label=?")) {
+                    ps2.setInt(1, showtimeId);
+                    ps2.setString(2, seatLabel);
+                    ps2.executeUpdate();
+                }
+
+                model.remove(selectedIndex);
+                bookingIds.remove(selectedIndex);
+                JOptionPane.showMessageDialog(frame, "Η κράτηση διαγράφηκε με επιτυχία.");
+            } else {
+                JOptionPane.showMessageDialog(frame, "Αποτυχία διαγραφής.");
+            }
+        }
+
+    } catch (SQLException ex) {
+        ex.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη διαγραφή: " + ex.getMessage());
+    }
+}
+
+    } else {
+        JOptionPane.showMessageDialog(frame, "Παρακαλώ επιλέξτε μια κράτηση για διαγραφή.");
+    }
+});
+
+	
+    JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    leftPanel.add(btnBack);
+    leftPanel.add(qrButton);
+    
+    JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+    rightPanel.add(deleteButton);
+    
+    JPanel bottomPanel = new JPanel(new BorderLayout());
+    bottomPanel.add(leftPanel, BorderLayout.WEST);
+    bottomPanel.add(rightPanel, BorderLayout.EAST);
+    
+    panel.add(bottomPanel, BorderLayout.SOUTH);
+    return panel;
+}
+    
     // QR Code Helper Methods
     private String generateQRCodeImage(String text) {
         try {
