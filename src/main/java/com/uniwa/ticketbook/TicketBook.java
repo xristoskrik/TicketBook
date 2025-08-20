@@ -24,6 +24,9 @@ import java.util.Base64;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
+import javax.swing.DefaultCellEditor;
 
 public class TicketBook {
     private JFrame frame;
@@ -192,10 +195,13 @@ public class TicketBook {
                 mainPanel.add(buildPostLoginHome(),   "postLoginHome");
                 mainPanel.add(buildMoviesPage(),      "movies");
                 cardLayout.show(mainPanel, "postLoginHome");
-            } /*else if ("admin".equals(userRole)) {
-                 Admin login
+            }   else if ("admin".equals(userRole)) {
+                // Admin login - edit movies etc
+                mainPanel.add(buildAdminHome(),   "AdminHome");
+                mainPanel.add(buildAdminMoviesPage(),      "AdminMovies");
+                cardLayout.show(mainPanel, "AdminHome");
                 
-            }*/ else {
+            }   else {
                 // Invalid role
                 msg.setText("Δεν έχετε δικαίωμα πρόσβασης σε αυτή την εφαρμογή");
                 currentUserId = -1;
@@ -712,6 +718,865 @@ private JPanel buildMyBookingsPage() {
     return panel;
 }
 
+    // Post Login Admin Page
+    private JPanel buildAdminHome() {
+        JPanel panel = new JPanel(new BorderLayout());
+        JLabel title = new JLabel("Αρχική Διαχειριστή", SwingConstants.CENTER);
+        title.setFont(new Font("Arial", Font.BOLD, 24));
+        
+        // Κύριο πάνελ με τα κουμπιά λειτουργιών
+        JPanel buttons = new JPanel();
+        JButton btnAdminMovies = new JButton("Διαχείριση Ταινιών");
+        JButton btnAdminBkgs = new JButton("Κρατήσεις");
+        btnAdminMovies.addActionListener(e -> {
+        JPanel fresh = buildAdminMoviesPage();
+        mainPanel.add(fresh, "AdminMovies");
+        cardLayout.show(mainPanel, "AdminMovies");
+});
+        btnAdminBkgs.addActionListener(e -> {
+            JPanel fresh = buildAdminBookingsPage();
+            mainPanel.add(fresh, "AdminBookings");
+            cardLayout.show(mainPanel, "AdminBookings");
+        });
+        buttons.add(btnAdminMovies);
+        buttons.add(btnAdminBkgs);
+        
+        // Πάνελ με το κουμπί αποσύνδεσης
+        JPanel logoutPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton btnLogout = new JButton("Αποσύνδεση");
+        btnLogout.addActionListener(e -> {
+            currentUserId = -1;
+            currentUsername = null;
+            cardLayout.show(mainPanel, "home");
+        });
+        logoutPanel.add(btnLogout);
+        
+        // Διαμόρφωση του κύριου πάνελ
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(buttons, BorderLayout.CENTER);
+        panel.add(logoutPanel, BorderLayout.SOUTH);
+        
+        return panel;
+    }
+
+    // Movies Admin Page
+private JPanel buildAdminMoviesPage() {
+    JPanel panel = new JPanel(new BorderLayout(10, 10));
+    panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+    // Header
+    JLabel titleLabel = new JLabel("Διαχείριση Ταινιών", SwingConstants.CENTER);
+    titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+    
+    // Top panel with buttons
+    JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+    JButton btnAddMovie = new JButton("Προσθήκη Νέας Ταινίας");
+    JButton btnRefresh = new JButton("Ανανέωση");
+    JButton btnBack = new JButton("Επιστροφή");
+    
+    btnAddMovie.addActionListener(e -> showAddMovieDialog());
+    btnRefresh.addActionListener(e -> {
+        // Recreate and refresh the admin movies page
+        JPanel fresh = buildAdminMoviesPage();
+        mainPanel.add(fresh, "AdminMovies");
+        cardLayout.show(mainPanel, "AdminMovies");
+    });
+    btnBack.addActionListener(e -> {
+        cardLayout.show(mainPanel, "AdminHome");
+    });
+    
+    topPanel.add(btnAddMovie);
+    topPanel.add(btnRefresh);
+    topPanel.add(btnBack);
+
+    // Movies table
+    String[] columnNames = {"ID", "Τίτλος", "Διάρκεια", "Αξιολόγηση", "Περιγραφή", "Ενέργειες"};
+    DefaultTableModel tableModel = new DefaultTableModel(columnNames, 0) {
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            return column == 5; // Only actions column is editable
+        }
+    };
+    
+    JTable moviesTable = new JTable(tableModel);
+    moviesTable.setRowHeight(40);
+    moviesTable.getColumnModel().getColumn(5).setCellRenderer(new ButtonRenderer());
+    moviesTable.getColumnModel().getColumn(5).setCellEditor(new ButtonEditor(new JCheckBox()));
+    
+    // Load movies data
+    loadMoviesForAdmin(tableModel);
+    
+    JScrollPane scrollPane = new JScrollPane(moviesTable);
+    
+    panel.add(titleLabel, BorderLayout.NORTH);
+    panel.add(topPanel, BorderLayout.PAGE_START);
+    panel.add(scrollPane, BorderLayout.CENTER);
+    
+    return panel;
+}
+
+private void loadMoviesForAdmin(DefaultTableModel tableModel) {
+    tableModel.setRowCount(0);
+    String sql = "SELECT id, title, duration, stars, dc FROM movies ORDER BY title";
+    
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql);
+         ResultSet rs = st.executeQuery()) {
+        
+        while (rs.next()) {
+            int id = rs.getInt("id");
+            String title = rs.getString("title");
+            String duration = rs.getString("duration");
+            String stars = rs.getString("stars");
+            String description = rs.getString("dc");
+            
+            // Limit description length for table display
+            String shortDesc = description != null && description.length() > 50 
+                ? description.substring(0, 50) + "..." 
+                : description;
+            
+            Object[] row = {id, title, duration, stars, shortDesc, "Ενέργειες"};
+            tableModel.addRow(row);
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη φόρτωση των ταινιών");
+    }
+}
+
+private void showAddMovieDialog() {
+    showMovieDialog(null, "Προσθήκη Νέας Ταινίας");
+}
+
+private void showEditMovieDialog(int movieId) {
+    showMovieDialog(movieId, "Επεξεργασία Ταινίας");
+}
+
+private void showMovieDialog(Integer movieId, String title) {
+    JDialog dialog = new JDialog(frame, title, true);
+    dialog.setSize(500, 600);
+    dialog.setLayout(new BorderLayout());
+    
+    // Form panel
+    JPanel formPanel = new JPanel(new GridLayout(6, 2, 10, 10));
+    formPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    
+    JTextField titleField = new JTextField();
+    JTextField urlField = new JTextField();
+    JTextField durationField = new JTextField();
+    JTextField starsField = new JTextField();
+    JTextArea descArea = new JTextArea(5, 20);
+    descArea.setWrapStyleWord(true);
+    descArea.setLineWrap(true);
+    JScrollPane descScroll = new JScrollPane(descArea);
+    
+    formPanel.add(new JLabel("Τίτλος:"));
+    formPanel.add(titleField);
+    formPanel.add(new JLabel("URL Εικόνας:"));
+    formPanel.add(urlField);
+    formPanel.add(new JLabel("Διάρκεια:"));
+    formPanel.add(durationField);
+    formPanel.add(new JLabel("Αξιολόγηση:"));
+    formPanel.add(starsField);
+    formPanel.add(new JLabel("Περιγραφή:"));
+    formPanel.add(descScroll);
+    
+    // Load existing data if editing
+    if (movieId != null) {
+        loadMovieDataForEdit(movieId, titleField, urlField, durationField, starsField, descArea);
+    }
+    
+    // Buttons panel
+    JPanel buttonPanel = new JPanel(new FlowLayout());
+    JButton btnSave = new JButton(movieId == null ? "Προσθήκη" : "Ενημέρωση");
+    JButton btnCancel = new JButton("Ακύρωση");
+    JButton btnManageShowtimes = null;
+    
+    // Add "Manage Showtimes" button only for existing movies
+    if (movieId != null) {
+        btnManageShowtimes = new JButton("Διαχείριση Προβολών");
+        btnManageShowtimes.addActionListener(e -> {
+            dialog.dispose();
+            showShowtimesManagementDialog(movieId);
+        });
+    }
+    
+    btnSave.addActionListener(e -> {
+        if (saveMovie(movieId, titleField.getText(), urlField.getText(), 
+                     durationField.getText(), starsField.getText(), descArea.getText())) {
+            dialog.dispose();
+            // Refresh the admin movies page
+            JPanel fresh = buildAdminMoviesPage();
+            mainPanel.add(fresh, "AdminMovies");
+            cardLayout.show(mainPanel, "AdminMovies");
+        }
+    });
+    
+    btnCancel.addActionListener(e -> dialog.dispose());
+    
+    buttonPanel.add(btnSave);
+    buttonPanel.add(btnCancel);
+    if (btnManageShowtimes != null) {
+        buttonPanel.add(btnManageShowtimes);
+    }
+    
+    dialog.add(formPanel, BorderLayout.CENTER);
+    dialog.add(buttonPanel, BorderLayout.SOUTH);
+    dialog.setLocationRelativeTo(frame);
+    dialog.setVisible(true);
+}
+
+private void showShowtimesManagementDialog(int movieId) {
+    JDialog dialog = new JDialog(frame, "Διαχείριση Προβολών", true);
+    dialog.setSize(600, 500);
+    dialog.setLayout(new BorderLayout());
+    
+    // Get movie title for header
+    String movieTitle = getMovieTitle(movieId);
+    JLabel titleLabel = new JLabel("Προβολές για: " + movieTitle, SwingConstants.CENTER);
+    titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
+    
+    // Showtimes list
+    DefaultListModel<String> model = new DefaultListModel<>();
+    JList<String> showtimesList = new JList<>(model);
+    List<Integer> showtimeIds = new ArrayList<>();
+    
+    loadShowtimesForMovie(movieId, model, showtimeIds);
+    
+    // Buttons for showtime management
+    JPanel buttonPanel = new JPanel(new GridLayout(2, 2, 10, 10));
+    buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+    
+    JButton btnAddShowtime = new JButton("Προσθήκη Προβολής");
+    JButton btnDeleteShowtime = new JButton("Διαγραφή Προβολής");
+    JButton btnRefresh = new JButton("Ανανέωση");
+    JButton btnClose = new JButton("Κλείσιμο");
+    
+    btnAddShowtime.addActionListener(e -> {
+        showAddShowtimeDialog(movieId);
+        dialog.dispose();
+        showShowtimesManagementDialog(movieId); // Refresh
+    });
+    
+    btnDeleteShowtime.addActionListener(e -> {
+        int selectedIndex = showtimesList.getSelectedIndex();
+        if (selectedIndex >= 0 && selectedIndex < showtimeIds.size()) {
+            int showtimeId = showtimeIds.get(selectedIndex);
+            deleteShowtime(showtimeId);
+            loadShowtimesForMovie(movieId, model, showtimeIds); // Refresh list
+        } else {
+            JOptionPane.showMessageDialog(dialog, "Επιλέξτε προβολή για διαγραφή");
+        }
+    });
+    
+    btnRefresh.addActionListener(e -> {
+        loadShowtimesForMovie(movieId, model, showtimeIds);
+    });
+    
+    btnClose.addActionListener(e -> dialog.dispose());
+    
+    buttonPanel.add(btnAddShowtime);
+    buttonPanel.add(btnDeleteShowtime);
+    buttonPanel.add(btnRefresh);
+    buttonPanel.add(btnClose);
+    
+    dialog.add(titleLabel, BorderLayout.NORTH);
+    dialog.add(new JScrollPane(showtimesList), BorderLayout.CENTER);
+    dialog.add(buttonPanel, BorderLayout.SOUTH);
+    dialog.setLocationRelativeTo(frame);
+    dialog.setVisible(true);
+}
+
+private void showAddShowtimeDialog(int movieId) {
+    JDialog dialog = new JDialog(frame, "Προσθήκη Προβολής", true);
+    dialog.setSize(400, 300);
+    dialog.setLayout(new BorderLayout());
+    
+    JPanel formPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+    formPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+    
+    // Date and time fields
+    JTextField dayField = new JTextField("26"); // Day
+    JTextField monthField = new JTextField("5"); // Month
+    JTextField yearField = new JTextField("2024"); // Year
+    JTextField hourField = new JTextField("19"); // Hour
+    JTextField minuteField = new JTextField("00"); // Minute
+    JTextField roomField = new JTextField("1"); // Room number
+    
+    formPanel.add(new JLabel("Ημέρα:"));
+    formPanel.add(dayField);
+    formPanel.add(new JLabel("Μήνας:"));
+    formPanel.add(monthField);
+    formPanel.add(new JLabel("Έτος:"));
+    formPanel.add(yearField);
+    formPanel.add(new JLabel("Ώρα (HH):"));
+    formPanel.add(hourField);
+    
+    JPanel timePanel = new JPanel(new GridLayout(1, 2, 5, 0));
+    timePanel.add(new JLabel("Λεπτά (MM):"));
+    timePanel.add(minuteField);
+    formPanel.add(timePanel);
+    
+    formPanel.add(new JLabel("Αίθουσα:"));
+    formPanel.add(roomField);
+    
+    JPanel buttonPanel = new JPanel(new FlowLayout());
+    JButton btnSave = new JButton("Αποθήκευση");
+    JButton btnCancel = new JButton("Ακύρωση");
+    
+    btnSave.addActionListener(e -> {
+        try {
+            int day = Integer.parseInt(dayField.getText().trim());
+            int month = Integer.parseInt(monthField.getText().trim());
+            int year = Integer.parseInt(yearField.getText().trim());
+            int hour = Integer.parseInt(hourField.getText().trim());
+            int minute = Integer.parseInt(minuteField.getText().trim());
+            int room = Integer.parseInt(roomField.getText().trim());
+            
+            if (addShowtime(movieId, day, month, year, hour, minute, room)) {
+                dialog.dispose();
+            }
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(dialog, "Παρακαλώ εισάγετε έγκυρους αριθμούς");
+        }
+    });
+    
+    btnCancel.addActionListener(e -> dialog.dispose());
+    
+    buttonPanel.add(btnSave);
+    buttonPanel.add(btnCancel);
+    
+    dialog.add(formPanel, BorderLayout.CENTER);
+    dialog.add(buttonPanel, BorderLayout.SOUTH);
+    dialog.setLocationRelativeTo(frame);
+    dialog.setVisible(true);
+}
+
+private String getMovieTitle(int movieId) {
+    String sql = "SELECT title FROM movies WHERE id = ?";
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        st.setInt(1, movieId);
+        ResultSet rs = st.executeQuery();
+        if (rs.next()) {
+            return rs.getString("title");
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return "Άγνωστη Ταινία";
+}
+
+private void loadShowtimesForMovie(int movieId, DefaultListModel<String> model, List<Integer> showtimeIds) {
+    model.clear();
+    showtimeIds.clear();
+    
+    String sql = "SELECT id, show_time FROM showtimes WHERE movie_id = ? ORDER BY show_time";
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        st.setInt(1, movieId);
+        ResultSet rs = st.executeQuery();
+        while (rs.next()) {
+            int id = rs.getInt("id");
+            LocalDateTime dt = rs.getTimestamp("show_time").toLocalDateTime();
+            String day = capitalizeGreekDay(dt.getDayOfWeek());
+            String label = String.format(
+                "%s %d/%d %02d:%02d | Αίθουσα %d (ID: %d)",
+                day,
+                dt.getDayOfMonth(), dt.getMonthValue(),
+                dt.getHour(), dt.getMinute(),
+                1, // Default room - you might want to add room field to database
+                id
+            );
+            model.addElement(label);
+            showtimeIds.add(id);
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα φόρτωσης προβολών");
+    }
+}
+
+private boolean addShowtime(int movieId, int day, int month, int year, int hour, int minute, int room) {
+    // Validation
+    if (day < 1 || day > 31 || month < 1 || month > 12 || 
+        year < 2024 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        JOptionPane.showMessageDialog(frame, "Παρακαλώ εισάγετε έγκυρες τιμές ημερομηνίας και ώρας");
+        return false;
+    }
+    
+    try {
+        LocalDateTime showTime = LocalDateTime.of(year, month, day, hour, minute);
+        
+        // Insert showtime
+        String sql = "INSERT INTO showtimes (movie_id, show_time) VALUES (?, ?)";
+        try (Connection c = createConnection();
+             PreparedStatement st = c.prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+            
+            st.setInt(1, movieId);
+            st.setTimestamp(2, Timestamp.valueOf(showTime));
+            
+            int affectedRows = st.executeUpdate();
+            if (affectedRows > 0) {
+                // Get the generated showtime ID
+                ResultSet generatedKeys = st.getGeneratedKeys();
+                if (generatedKeys.next()) {
+                    int showtimeId = generatedKeys.getInt(1);
+                    
+                    // Create seats for this showtime (A1-A10, B1-B10, C1-C10)
+                    createSeatsForShowtime(showtimeId);
+                    
+                    JOptionPane.showMessageDialog(frame, "Η προβολή προστέθηκε επιτυχώς!");
+                    return true;
+                }
+            }
+        }
+    } catch (Exception e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά την προσθήκη προβολής: " + e.getMessage());
+    }
+    
+    return false;
+}
+
+private void createSeatsForShowtime(int showtimeId) throws SQLException {
+    String sql = "INSERT INTO seats (showtime_id, seat_label, is_available) VALUES (?, ?, ?)";
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        
+        // Create seats A1-A10, B1-B10, C1-C10
+        char[] rows = {'A', 'B', 'C'};
+        for (char row : rows) {
+            for (int seatNum = 1; seatNum <= 10; seatNum++) {
+                st.setInt(1, showtimeId);
+                st.setString(2, row + String.valueOf(seatNum));
+                st.setBoolean(3, true); // Available
+                st.addBatch();
+            }
+        }
+        st.executeBatch();
+    }
+}
+
+private void deleteShowtime(int showtimeId) {
+    int confirm = JOptionPane.showConfirmDialog(
+        frame,
+        "Είστε σίγουροι ότι θέλετε να διαγράψετε αυτή την προβολή;\nΘα διαγραφούν και όλες οι κρατήσεις και θέσεις!",
+        "Επιβεβαίωση Διαγραφής",
+        JOptionPane.YES_NO_OPTION,
+        JOptionPane.WARNING_MESSAGE
+    );
+    
+    if (confirm == JOptionPane.YES_OPTION) {
+        try (Connection c = createConnection()) {
+            c.setAutoCommit(false);
+            
+            try {
+                // Delete bookings first
+                try (PreparedStatement st = c.prepareStatement("DELETE FROM bookings WHERE showtime_id = ?")) {
+                    st.setInt(1, showtimeId);
+                    st.executeUpdate();
+                }
+                
+                // Delete seats
+                try (PreparedStatement st = c.prepareStatement("DELETE FROM seats WHERE showtime_id = ?")) {
+                    st.setInt(1, showtimeId);
+                    st.executeUpdate();
+                }
+                
+                // Finally delete the showtime
+                try (PreparedStatement st = c.prepareStatement("DELETE FROM showtimes WHERE id = ?")) {
+                    st.setInt(1, showtimeId);
+                    int affectedRows = st.executeUpdate();
+                    
+                    if (affectedRows > 0) {
+                        c.commit();
+                        JOptionPane.showMessageDialog(frame, "Η προβολή διαγράφηκε επιτυχώς!");
+                    } else {
+                        c.rollback();
+                        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη διαγραφή");
+                    }
+                }
+                
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη διαγραφή: " + e.getMessage());
+        }
+    }
+}
+
+private void loadMovieDataForEdit(int movieId, JTextField titleField, JTextField urlField, 
+                                 JTextField durationField, JTextField starsField, JTextArea descArea) {
+    String sql = "SELECT title, picture_url, duration, stars, dc FROM movies WHERE id = ?";
+    
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        
+        st.setInt(1, movieId);
+        try (ResultSet rs = st.executeQuery()) {
+            if (rs.next()) {
+                titleField.setText(rs.getString("title"));
+                urlField.setText(rs.getString("picture_url"));
+                durationField.setText(rs.getString("duration"));
+                starsField.setText(rs.getString("stars"));
+                descArea.setText(rs.getString("dc"));
+            }
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη φόρτωση των στοιχείων της ταινίας");
+    }
+}
+
+private boolean saveMovie(Integer movieId, String title, String pictureUrl, 
+                         String duration, String stars, String description) {
+    // Validation
+    if (title.trim().isEmpty()) {
+        JOptionPane.showMessageDialog(frame, "Ο τίτλος είναι υποχρεωτικός");
+        return false;
+    }
+    
+    String sql;
+    if (movieId == null) {
+        // Insert new movie
+        sql = "INSERT INTO movies (title, picture_url, duration, stars, dc) VALUES (?, ?, ?, ?, ?)";
+    } else {
+        // Update existing movie
+        sql = "UPDATE movies SET title = ?, picture_url = ?, duration = ?, stars = ?, dc = ? WHERE id = ?";
+    }
+    
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        
+        st.setString(1, title);
+        st.setString(2, pictureUrl.trim().isEmpty() ? null : pictureUrl);
+        st.setString(3, duration.trim().isEmpty() ? null : duration);
+        st.setString(4, stars.trim().isEmpty() ? null : stars);
+        st.setString(5, description.trim().isEmpty() ? null : description);
+        
+        if (movieId != null) {
+            st.setInt(6, movieId);
+        }
+        
+        int affectedRows = st.executeUpdate();
+        if (affectedRows > 0) {
+            String message = movieId == null ? "Η ταινία προστέθηκε επιτυχώς!" : "Η ταινία ενημερώθηκε επιτυχώς!";
+            JOptionPane.showMessageDialog(frame, message);
+            return true;
+        } else {
+            JOptionPane.showMessageDialog(frame, "Σφάλμα κατά την αποθήκευση");
+            return false;
+        }
+        
+    } catch (SQLException e) {
+        e.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα βάσης δεδομένων: " + e.getMessage());
+        return false;
+    }
+}
+
+private void deleteMovie(int movieId) {
+    int confirm = JOptionPane.showConfirmDialog(
+        frame,
+        "Είστε σίγουροι ότι θέλετε να διαγράψετε αυτή την ταινία;\nΘα διαγραφούν και όλες οι σχετικές προβολές και κρατήσεις!",
+        "Επιβεβαίωση Διαγραφής",
+        JOptionPane.YES_NO_OPTION,
+        JOptionPane.WARNING_MESSAGE
+    );
+    
+    if (confirm == JOptionPane.YES_OPTION) {
+        try (Connection c = createConnection()) {
+            c.setAutoCommit(false);
+            
+            try {
+                // Delete bookings first
+                try (PreparedStatement st = c.prepareStatement(
+                    "DELETE FROM bookings WHERE showtime_id IN (SELECT id FROM showtimes WHERE movie_id = ?)")) {
+                    st.setInt(1, movieId);
+                    st.executeUpdate();
+                }
+                
+                // Delete seats
+                try (PreparedStatement st = c.prepareStatement(
+                    "DELETE FROM seats WHERE showtime_id IN (SELECT id FROM showtimes WHERE movie_id = ?)")) {
+                    st.setInt(1, movieId);
+                    st.executeUpdate();
+                }
+                
+                // Delete showtimes
+                try (PreparedStatement st = c.prepareStatement("DELETE FROM showtimes WHERE movie_id = ?")) {
+                    st.setInt(1, movieId);
+                    st.executeUpdate();
+                }
+                
+                // Finally delete the movie
+                try (PreparedStatement st = c.prepareStatement("DELETE FROM movies WHERE id = ?")) {
+                    st.setInt(1, movieId);
+                    int affectedRows = st.executeUpdate();
+                    
+                    if (affectedRows > 0) {
+                        c.commit();
+                        JOptionPane.showMessageDialog(frame, "Η ταινία διαγράφηκε επιτυχώς!");
+                        // Refresh the admin movies page
+                        JPanel fresh = buildAdminMoviesPage();
+                        mainPanel.add(fresh, "AdminMovies");
+                        cardLayout.show(mainPanel, "AdminMovies");
+                    } else {
+                        c.rollback();
+                        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη διαγραφή");
+                    }
+                }
+                
+            } catch (SQLException e) {
+                c.rollback();
+                throw e;
+            } finally {
+                c.setAutoCommit(true);
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη διαγραφή: " + e.getMessage());
+        }
+    }
+}
+
+// Button renderer for the actions column
+class ButtonRenderer extends JButton implements TableCellRenderer {
+    public ButtonRenderer() {
+        setOpaque(true);
+    }
+    
+    @Override
+    public Component getTableCellRendererComponent(JTable table, Object value,
+            boolean isSelected, boolean hasFocus, int row, int column) {
+        setText("Ενέργειες");
+        return this;
+    }
+}
+
+// Button editor for the actions column
+class ButtonEditor extends DefaultCellEditor {
+    protected JButton button;
+    private String label;
+    private boolean isPushed;
+    private JTable table;
+    private int selectedRow;
+    
+    public ButtonEditor(JCheckBox checkBox) {
+        super(checkBox);
+        button = new JButton();
+        button.setOpaque(true);
+        button.addActionListener(e -> fireEditingStopped());
+    }
+    
+    @Override
+    public Component getTableCellEditorComponent(JTable table, Object value,
+            boolean isSelected, int row, int column) {
+        this.table = table;
+        this.selectedRow = row;
+        label = (value == null) ? "Ενέργειες" : value.toString();
+        button.setText(label);
+        isPushed = true;
+        return button;
+    }
+    
+    @Override
+    public Object getCellEditorValue() {
+        if (isPushed) {
+            // Show popup menu with actions
+            JPopupMenu popup = new JPopupMenu();
+            
+            JMenuItem editItem = new JMenuItem("Επεξεργασία");
+            JMenuItem deleteItem = new JMenuItem("Διαγραφή");
+            JMenuItem showtimesItem = new JMenuItem("Διαχείριση Προβολών");
+            
+            int movieId = (Integer) table.getValueAt(selectedRow, 0);
+            
+            editItem.addActionListener(e -> showEditMovieDialog(movieId));
+            deleteItem.addActionListener(e -> deleteMovie(movieId));
+            showtimesItem.addActionListener(e -> showShowtimesManagementDialog(movieId));
+            
+            popup.add(editItem);
+            popup.add(deleteItem);
+            popup.add(showtimesItem);
+            
+            // Show popup at button location
+            popup.show(button, 0, button.getHeight());
+        }
+        isPushed = false;
+        return label;
+    }
+    
+    @Override
+    public boolean stopCellEditing() {
+        isPushed = false;
+        return super.stopCellEditing();
+    }
+}
+    
+    private JPanel buildAdminBookingsPage() {
+    JPanel panel = new JPanel(new BorderLayout(10,10));
+    panel.setBorder(BorderFactory.createEmptyBorder(20,20,20,20));
+    DefaultListModel<String> model = new DefaultListModel<>();
+    JList<String> list = new JList<>(model);
+    
+    // Store booking IDs separately to match with list items
+    List<Integer> bookingIds = new ArrayList<>();
+
+    String sql = "SELECT u.username, u.email, b.id, m.title, s.show_time, b.seat_number, b.qr_code " +
+                 "FROM bookings b " +
+                 "JOIN users u ON b.user_id = u.id " +
+                 "JOIN showtimes s ON b.showtime_id=s.id " +
+                 "JOIN movies m ON s.movie_id=m.id " +
+                 "ORDER BY s.show_time";
+    try (Connection c = createConnection();
+         PreparedStatement st = c.prepareStatement(sql)) {
+        ResultSet rs = st.executeQuery();
+        while (rs.next()) {
+            int bookingId = rs.getInt("id");
+            bookingIds.add(bookingId); // Store the booking ID
+            
+            LocalDateTime dt = rs.getTimestamp("show_time").toLocalDateTime();
+            String day = capitalizeGreekDay(dt.getDayOfWeek());
+            String lbl = String.format(
+              "%s (%s) %s %d/%d %02d:%02d - %s (Θέση %s)",
+              rs.getString("username"),
+              rs.getString("email"),
+              day,
+              dt.getDayOfMonth(), dt.getMonthValue(),
+              dt.getHour(), dt.getMinute(),
+              rs.getString("title"),
+              rs.getString("seat_number")
+            );
+            if (rs.getString("qr_code") != null) {
+                lbl += " [QR]";
+            }
+            model.addElement(lbl);
+        }
+    } catch (SQLException ex) {
+        ex.printStackTrace();
+    }
+
+    JButton btnBack = new JButton("Πίσω");
+    btnBack.addActionListener(e -> cardLayout.show(mainPanel, "AdminHome"));
+
+    JButton qrButton = new JButton("Προβολή QR Code");
+    qrButton.addActionListener(e -> {
+    int selectedIndex = list.getSelectedIndex();
+    if (selectedIndex >= 0 && selectedIndex < bookingIds.size()) {
+        int bookingId = bookingIds.get(selectedIndex);
+
+        String qrSql = "SELECT qr_code FROM bookings WHERE id=?";
+        try (Connection c = createConnection();
+             PreparedStatement st = c.prepareStatement(qrSql)) {
+            st.setInt(1, bookingId);
+            ResultSet rs = st.executeQuery();
+            if (rs.next()) {
+                String qrCode = rs.getString("qr_code");
+                if (qrCode != null && !qrCode.isEmpty()) {
+                    showQRCodeDialog(qrCode);
+                } else {
+                    JOptionPane.showMessageDialog(frame, "Δεν βρέθηκε QR code για αυτή την κράτηση");
+                }
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(frame, "Σφάλμα φόρτωσης QR code: " + ex.getMessage());
+        }
+    } else {
+        JOptionPane.showMessageDialog(frame, "Παρακαλώ επιλέξτε μία κράτηση.");
+    }
+});
+
+    
+    panel.add(new JScrollPane(list), BorderLayout.CENTER);
+    JButton deleteButton = new JButton("Διαγραφή Κράτησης");
+    deleteButton.addActionListener(e -> {
+    int selectedIndex = list.getSelectedIndex();
+    if (selectedIndex >= 0 && selectedIndex < bookingIds.size()) {
+        int bookingId = bookingIds.get(selectedIndex);
+
+        int confirm = JOptionPane.showConfirmDialog(
+            frame,
+            "Είστε σίγουρος ότι θέλετε να διαγράψετε αυτή την κράτηση;",
+            "Επιβεβαίωση Διαγραφής",
+            JOptionPane.YES_NO_OPTION
+        );
+
+if (confirm == JOptionPane.YES_OPTION) {
+    try (Connection c = createConnection()) {
+
+        // Βρες showtime_id και seat_number ΠΡΙΝ τη διαγραφή
+        int showtimeId = 0;
+        String seatLabel = "";
+
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT showtime_id, seat_number FROM bookings WHERE id=?")) {
+            ps.setInt(1, bookingId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                showtimeId = rs.getInt("showtime_id");
+                seatLabel = rs.getString("seat_number");
+            }
+        }
+
+        // Διαγραφή κράτησης
+        String deleteSql = "DELETE FROM bookings WHERE id = ?";
+        try (PreparedStatement st = c.prepareStatement(deleteSql)) {
+            st.setInt(1, bookingId);
+            int affected = st.executeUpdate();
+            if (affected > 0) {
+                // Κάνε τη θέση ξανά διαθέσιμη
+                try (PreparedStatement ps2 = c.prepareStatement(
+                        "UPDATE seats SET is_available=1 WHERE showtime_id=? AND seat_label=?")) {
+                    ps2.setInt(1, showtimeId);
+                    ps2.setString(2, seatLabel);
+                    ps2.executeUpdate();
+                }
+
+                model.remove(selectedIndex);
+                bookingIds.remove(selectedIndex);
+                JOptionPane.showMessageDialog(frame, "Η κράτηση διαγράφηκε με επιτυχία.");
+            } else {
+                JOptionPane.showMessageDialog(frame, "Αποτυχία διαγραφής.");
+            }
+        }
+
+    } catch (SQLException ex) {
+        ex.printStackTrace();
+        JOptionPane.showMessageDialog(frame, "Σφάλμα κατά τη διαγραφή: " + ex.getMessage());
+    }
+}
+
+    } else {
+        JOptionPane.showMessageDialog(frame, "Παρακαλώ επιλέξτε μια κράτηση για διαγραφή.");
+    }
+});
+
+	
+    JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+    leftPanel.add(btnBack);
+    leftPanel.add(qrButton);
+    
+    JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+    rightPanel.add(deleteButton);
+    
+    JPanel bottomPanel = new JPanel(new BorderLayout());
+    bottomPanel.add(leftPanel, BorderLayout.WEST);
+    bottomPanel.add(rightPanel, BorderLayout.EAST);
+    
+    panel.add(bottomPanel, BorderLayout.SOUTH);
+    return panel;
+}
+    
     // QR Code Helper Methods
     private String generateQRCodeImage(String text) {
         try {
