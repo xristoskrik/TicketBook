@@ -54,6 +54,13 @@
   <artifactId>javase</artifactId>
   <version>3.5.1</version>
 </dependency>
+
+    <!-- New for 2FA -->
+    <dependency>
+        <groupId>commons-codec</groupId>
+        <artifactId>commons-codec</artifactId>
+        <version>1.15</version>
+    </dependency>
 </dependencies>
 
 </project>
